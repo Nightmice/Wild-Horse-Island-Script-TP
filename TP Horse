@@ -88,6 +88,13 @@ local function findValidModels()
 		return {}
 	end
 
+	-- Limpa highlights antigos
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("Highlight") and obj.Name == "TeleportHighlight" then
+			obj:Destroy()
+		end
+	end
+
 	local found = {}
 
 	for _, descendant in ipairs(islandsFolder:GetDescendants()) do
@@ -95,6 +102,18 @@ local function findValidModels()
 			and descendant:FindFirstChildOfClass("Humanoid")
 			and descendant:FindFirstChild("HumanoidRootPart")
 			and descendant.Name:match("^%b{}$") then
+
+			-- Cria o highlight
+			local highlight = Instance.new("Highlight")
+			highlight.Name = "TeleportHighlight"
+			highlight.FillColor = Color3.fromRGB(0, 170, 255)
+			highlight.OutlineColor = Color3.fromRGB(0, 85, 170)
+			highlight.FillTransparency = 0.5
+			highlight.OutlineTransparency = 0
+			highlight.Adornee = descendant
+			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			highlight.Parent = descendant
+
 			table.insert(found, {
 				Model = descendant,
 				RootPart = descendant:FindFirstChild("HumanoidRootPart")
@@ -160,7 +179,7 @@ UIS.InputBegan:Connect(function(input, gameProcessed)
 
 	if input.KeyCode == Enum.KeyCode.Z then
 		teleportToNextModel()
-	elseif input.KeyCode == Enum.KeyCode.BackSlash then -- tecla "\"
+	elseif input.KeyCode == Enum.KeyCode.BackSlash then
 		GUI.Enabled = not GUI.Enabled
 		if GUI.Enabled then
 			refreshHorseList()
