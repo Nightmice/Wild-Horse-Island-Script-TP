@@ -1,3 +1,273 @@
+-- Nightmice x ChatGPT (versão Discord + binds + cleanup + Ilha Específica)
+
+local Player = game:GetService("Players").LocalPlayer
+local UIS = game:GetService("UserInputService")
+local RunService = game:GetService("RunService")
+
+local Character
+local Humanoid
+local connections = {} -- para guardar todos os Connects
+
+-- Função helper para conectar eventos e salvar para cleanup
+local function safeConnect(signal, func)
+	local conn = signal:Connect(func)
+	table.insert(connections, conn)
+	return conn
+end
+
+-- Atualiza Character no spawn
+local function setupCharacter(char)
+	Character = char
+	Humanoid = char:WaitForChild("Humanoid")
+end
+
+setupCharacter(Player.Character or Player.CharacterAdded:Wait())
+safeConnect(Player.CharacterAdded, setupCharacter)
+
+-- GUI
+local GUI = Instance.new("ScreenGui")
+local Frame = Instance.new("Frame")
+local TitleLabel = Instance.new("TextLabel")
+local IslandLabel = Instance.new("TextLabel") -- NOVO: Label da Ilha
+local StatusLabel = Instance.new("TextLabel")
+local TeleportButton = Instance.new("TextButton")
+local RefreshButton = Instance.new("TextButton")
+local CloseButton = Instance.new("TextButton")
+
+GUI.Name = "TeleportGUI"
+GUI.Parent = Player:WaitForChild("PlayerGui")
+GUI.ResetOnSpawn = false
+
+-- Frame estilo Discord
+Frame.Name = "TPFrame"
+Frame.Size = UDim2.new(0, 320, 0, 180) -- Aumentado para caber o label da ilha
+Frame.Position = UDim2.new(0.5, -160, 0.5, -90)
+Frame.AnchorPoint = Vector2.new(0.5, 0.5)
+Frame.BackgroundColor3 = Color3.fromRGB(54, 57, 63) -- cinza do Discord
+Frame.BorderSizePixel = 0
+Frame.Parent = GUI
+Instance.new("UICorner", Frame).CornerRadius = UDim.new(0, 8)
+
+-- Título
+TitleLabel.Size = UDim2.new(1, -40, 0, 30)
+TitleLabel.Position = UDim2.new(0, 10, 0, 5)
+TitleLabel.Text = "TP Horse"
+TitleLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
+TitleLabel.Font = Enum.Font.SourceSansSemibold
+TitleLabel.TextSize = 20
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.Parent = Frame
+
+-- NOVO: Rótulo da Ilha
+IslandLabel.Name = "IslandLabel"
+IslandLabel.Size = UDim2.new(1, -40, 0, 20)
+IslandLabel.Position = UDim2.new(0, 10, 0, 35) -- Posição ajustada
+IslandLabel.Text = "Ilha: Buscando..."
+IslandLabel.TextColor3 = Color3.fromRGB(180, 180, 180) 
+IslandLabel.Font = Enum.Font.SourceSans
+IslandLabel.TextSize = 14
+IslandLabel.BackgroundTransparency = 1
+IslandLabel.TextXAlignment = Enum.TextXAlignment.Left
+IslandLabel.Parent = Frame
+
+-- Botão de fechar (X)
+CloseButton.Size = UDim2.new(0, 28, 0, 28)
+CloseButton.Position = UDim2.new(1, -35, 0, 6)
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+CloseButton.Font = Enum.Font.SourceSansBold
+CloseButton.TextSize = 18
+CloseButton.BackgroundColor3 = Color3.fromRGB(237, 66, 69)
+CloseButton.AutoButtonColor = true
+CloseButton.Parent = Frame
+Instance.new("UICorner", CloseButton).CornerRadius = UDim.new(0, 6)
+
+-- Status
+StatusLabel.Size = UDim2.new(1, -20, 0.4, 0)
+StatusLabel.Position = UDim2.new(0, 10, 0.3, 0) -- Posição ajustada
+StatusLabel.TextColor3 = Color3.new(1, 1, 1)
+StatusLabel.Font = Enum.Font.SourceSans
+StatusLabel.TextSize = 16
+StatusLabel.TextWrapped = true
+StatusLabel.TextYAlignment = Enum.TextYAlignment.Top
+StatusLabel.BackgroundTransparency = 1
+StatusLabel.Parent = Frame
+
+-- Botão Teleport
+TeleportButton.Size = UDim2.new(0, 140, 0, 40)
+TeleportButton.Position = UDim2.new(0, 10, 0.75, 0)
+TeleportButton.Text = "Teletransportar"
+TeleportButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+TeleportButton.Font = Enum.Font.SourceSansSemibold
+TeleportButton.TextSize = 18
+TeleportButton.BackgroundColor3 = Color3.fromRGB(88, 101, 242)
+TeleportButton.AutoButtonColor = true
+TeleportButton.Parent = Frame
+Instance.new("UICorner", TeleportButton).CornerRadius = UDim.new(0, 6)
+
+-- Botão Refresh
+RefreshButton.Size = UDim2.new(0, 140, 0, 40)
+RefreshButton.Position = UDim2.new(1, -150, 0.75, 0)
+RefreshButton.Text = "Refazer Busca"
+RefreshButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+RefreshButton.Font = Enum.Font.SourceSansSemibold
+RefreshButton.TextSize = 18
+RefreshButton.BackgroundColor3 = Color3.fromRGB(67, 181, 129)
+RefreshButton.AutoButtonColor = true
+RefreshButton.Parent = Frame
+Instance.new("UICorner", RefreshButton).CornerRadius = UDim.new(0, 6)
+
+GUI.Enabled = false
+
+-- Teleport logic
+local validModels = {}
+local currentModelIndex = 1
+
+-- Modificada para buscar APENAS na ilha do jogador e retornar o nome da ilha
+local function findValidModels()
+	local islandsFolder = workspace:FindFirstChild("Islands")
+	if not islandsFolder then
+		warn("Pasta 'Islands' não encontrada no Workspace")
+		return {}, "Erro: Islands Missing"
+	end
+
+	-- Limpa highlights antigos
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("Highlight") and obj.Name == "TeleportHighlight" then
+			obj:Destroy()
+		end
+	end
+
+    -- 1. Identifica a ilha do jogador
+	local playerIslandFolder = Character and Character.Parent
+	local islandContainer = nil
+
+	-- Percorre os pais até encontrar uma subpasta da Islands
+	while playerIslandFolder and playerIslandFolder ~= islandsFolder and playerIslandFolder ~= workspace do
+		if playerIslandFolder.Parent == islandsFolder then
+			islandContainer = playerIslandFolder
+			break
+		end
+		playerIslandFolder = playerIslandFolder.Parent
+	end
+
+	if not islandContainer then
+		warn("Ilha do jogador não identificada dentro da pasta 'Islands'.")
+		return {}, "Erro: Não na Ilha"
+	end
+
+    local islandName = islandContainer.Name
+    
+    -- 2. Busca restrita à ilha atual
+	local found = {}
+
+	for _, descendant in ipairs(islandContainer:GetDescendants()) do
+		if descendant:IsA("Model")
+			and descendant:FindFirstChildOfClass("Humanoid")
+			and descendant:FindFirstChild("HumanoidRootPart")
+			and descendant.Name:match("^%b{}$") then
+
+			local highlight = Instance.new("Highlight")
+			highlight.Name = "TeleportHighlight"
+			highlight.FillColor = Color3.fromRGB(88, 101, 242)
+			highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+			highlight.FillTransparency = 0.5
+			highlight.OutlineTransparency = 0
+			highlight.Adornee = descendant
+			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+			highlight.Parent = descendant
+
+			table.insert(found, {
+				Model = descendant,
+				RootPart = descendant:FindFirstChild("HumanoidRootPart")
+			})
+		end
+	end
+
+	table.sort(found, function(a, b)
+		return a.Model.Name < b.Model.Name
+	end)
+
+    -- Retorna modelos e nome da ilha
+	return found, islandName
+end
+
+local function updateGUIStatus()
+	if #validModels == 0 then
+		StatusLabel.Text = "Nenhum cavalo encontrado com nome entre { }"
+	else
+		local modelInfo = validModels[currentModelIndex]
+		local pos = modelInfo.RootPart.Position
+		StatusLabel.Text = string.format("Cavalo %d de %d:\n%s\nPosição: %.1f, %.1f, %.1f",
+			currentModelIndex,
+			#validModels,
+			modelInfo.Model.Name,
+			pos.X, pos.Y, pos.Z)
+	end
+end
+
+local function teleportToNextModel()
+	if #validModels == 0 then
+		StatusLabel.Text = "Nenhum cavalo encontrado com nome entre { }"
+		return
+	end
+
+	currentModelIndex += 1
+	if currentModelIndex > #validModels then
+		currentModelIndex = 1
+	end
+
+	local target = validModels[currentModelIndex]
+	if target and target.Model and target.RootPart and Character then
+		Character:PivotTo(CFrame.new(target.RootPart.Position + Vector3.new(0, 3, 0)))
+		updateGUIStatus()
+	end
+end
+
+local function refreshHorseList()
+	local islandName
+    
+    -- Captura a lista de modelos e o nome da ilha
+	validModels, islandName = findValidModels()
+    
+	currentModelIndex = 1
+    
+    -- Atualiza o label da ilha
+    if islandName and islandName:sub(1, 4) == "Erro" then
+        IslandLabel.Text = "Ilha: Falha na identificação"
+    else
+        IslandLabel.Text = "Ilha: " .. (islandName or "Desconhecida")
+    end
+    
+	updateGUIStatus()
+end
+
+-- Cleanup total
+local function cleanup()
+	for _, conn in pairs(connections) do
+		if conn.Connected then
+			conn:Disconnect()
+		end
+	end
+	connections = {}
+
+	for _, obj in ipairs(workspace:GetDescendants()) do
+		if obj:IsA("Highlight") and obj.Name == "TeleportHighlight" then
+			obj:Destroy()
+		end
+	end
+
+	if GUI then
+		GUI:Destroy()
+	end
+end
+
+-- Conecta botões
+safeConnect(TeleportButton.MouseButton1Click, teleportToNextModel)
+safeConnect(RefreshButton.MouseButton1Click, refreshHorseList)
+safeConnect(CloseButton.MouseButton1Click, cleanup)
+
 -- Teclado
 safeConnect(UIS.InputBegan, function(input, gameProcessed)
 	if gameProcessed then return end
@@ -9,21 +279,16 @@ safeConnect(UIS.InputBegan, function(input, gameProcessed)
 	end
 end)
 
--- Botões
-safeConnect(TeleportButton.MouseButton1Click, teleportToNextModel)
-safeConnect(RefreshButton.MouseButton1Click, refreshHorseList)
-safeConnect(CloseButton.MouseButton1Click, function()
-	cleanup()
-end)
+-- Arrastar GUI
+local dragInput, mousePos, framePos
 
--- Arrastar
-Frame.InputBegan:Connect(function(input)
+safeConnect(Frame.InputBegan, function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragInput = input
 		mousePos = UIS:GetMouseLocation()
 		framePos = Frame.Position
 
-		input.Changed:Connect(function()
+		safeConnect(input.Changed, function()
 			if dragInput and dragInput.UserInputState == Enum.UserInputState.End then
 				dragInput = nil
 			end
@@ -37,3 +302,8 @@ safeConnect(RunService.Heartbeat, function()
 		Frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
 	end
 end)
+
+-- Inicializa
+task.wait(1)
+refreshHorseList()
+GUI.Enabled = true
