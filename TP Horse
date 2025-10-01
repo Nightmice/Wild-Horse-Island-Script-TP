@@ -1,198 +1,22 @@
--- Nightmice x ChatGPT
-
-
-local Player = game:GetService("Players").LocalPlayer
-local Character = Player.Character or Player.CharacterAdded:Wait()
-local Humanoid = Character:WaitForChild("Humanoid")
-
-local UIS = game:GetService("UserInputService")
-local RunService = game:GetService("RunService")
-
--- GUI
-local GUI = Instance.new("ScreenGui")
-local Frame = Instance.new("Frame")
-local TitleLabel = Instance.new("TextLabel")
-local StatusLabel = Instance.new("TextLabel")
-local TeleportButton = Instance.new("TextButton")
-local RefreshButton = Instance.new("TextButton")
-local CloseButton = Instance.new("TextButton")
-
-GUI.Name = "TeleportGUI"
-GUI.Parent = Player:WaitForChild("PlayerGui")
-GUI.ResetOnSpawn = false
-
-Frame.Name = "TPFrame"
-Frame.Size = UDim2.new(0, 300, 0, 140)
-Frame.Position = UDim2.new(0.5, -150, 1, -140)
-Frame.AnchorPoint = Vector2.new(0.5, 0.5)
-Frame.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
-Frame.BackgroundTransparency = 0.3
-Frame.Parent = GUI
-
-TitleLabel.Size = UDim2.new(1, -30, 0.2, 0)
-TitleLabel.Position = UDim2.new(0, 5, 0, 0)
-TitleLabel.Text = "TP Horse"
-TitleLabel.TextColor3 = Color3.new(1, 1, 1)
-TitleLabel.Font = Enum.Font.SourceSansBold
-TitleLabel.TextSize = 20
-TitleLabel.BackgroundTransparency = 1
-TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
-TitleLabel.Parent = Frame
-
-CloseButton.Size = UDim2.new(0, 25, 0, 25)
-CloseButton.Position = UDim2.new(1, -30, 0, 2)
-CloseButton.Text = "\\"
-CloseButton.TextColor3 = Color3.new(1, 1, 1)
-CloseButton.Font = Enum.Font.SourceSansBold
-CloseButton.TextSize = 18
-CloseButton.BackgroundColor3 = Color3.fromRGB(200, 60, 60)
-CloseButton.BackgroundTransparency = 0.2
-CloseButton.Parent = Frame
-
-StatusLabel.Size = UDim2.new(1, -10, 0.4, -10)
-StatusLabel.Position = UDim2.new(0, 5, 0.2, 0)
-StatusLabel.TextColor3 = Color3.new(1, 1, 1)
-StatusLabel.Font = Enum.Font.SourceSans
-StatusLabel.TextSize = 16
-StatusLabel.TextWrapped = true
-StatusLabel.TextYAlignment = Enum.TextYAlignment.Top
-StatusLabel.BackgroundTransparency = 1
-StatusLabel.Parent = Frame
-
-TeleportButton.Size = UDim2.new(0, 140, 0, 40)
-TeleportButton.Position = UDim2.new(0, 10, 0.75, 0)
-TeleportButton.Text = "Teletransportar"
-TeleportButton.TextColor3 = Color3.new(1, 1, 1)
-TeleportButton.Font = Enum.Font.SourceSans
-TeleportButton.TextSize = 18
-TeleportButton.BackgroundColor3 = Color3.fromRGB(0, 128, 255)
-TeleportButton.BackgroundTransparency = 0.2
-TeleportButton.Parent = Frame
-
-RefreshButton.Size = UDim2.new(0, 120, 0, 40)
-RefreshButton.Position = UDim2.new(1, -130, 0.75, 0)
-RefreshButton.Text = "Refazer Busca"
-RefreshButton.TextColor3 = Color3.new(1, 1, 1)
-RefreshButton.Font = Enum.Font.SourceSans
-RefreshButton.TextSize = 18
-RefreshButton.BackgroundColor3 = Color3.fromRGB(80, 180, 80)
-RefreshButton.BackgroundTransparency = 0.2
-RefreshButton.Parent = Frame
-
-GUI.Enabled = false
-
-local validModels = {}
-local currentModelIndex = 1
-
-local function findValidModels()
-	local islandsFolder = workspace:FindFirstChild("Islands")
-	if not islandsFolder then
-		warn("Pasta 'Islands' não encontrada no Workspace")
-		return {}
-	end
-
-	-- Limpa highlights antigos
-	for _, obj in ipairs(workspace:GetDescendants()) do
-		if obj:IsA("Highlight") and obj.Name == "TeleportHighlight" then
-			obj:Destroy()
-		end
-	end
-
-	local found = {}
-
-	for _, descendant in ipairs(islandsFolder:GetDescendants()) do
-		if descendant:IsA("Model")
-			and descendant:FindFirstChildOfClass("Humanoid")
-			and descendant:FindFirstChild("HumanoidRootPart")
-			and descendant.Name:match("^%b{}$") then
-
-			-- Cria o highlight
-			local highlight = Instance.new("Highlight")
-			highlight.Name = "TeleportHighlight"
-			highlight.FillColor = Color3.fromRGB(0, 170, 255)
-			highlight.OutlineColor = Color3.fromRGB(0, 85, 170)
-			highlight.FillTransparency = 0.5
-			highlight.OutlineTransparency = 0
-			highlight.Adornee = descendant
-			highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
-			highlight.Parent = descendant
-
-			table.insert(found, {
-				Model = descendant,
-				RootPart = descendant:FindFirstChild("HumanoidRootPart")
-			})
-		end
-	end
-
-	table.sort(found, function(a, b)
-		return a.Model.Name < b.Model.Name
-	end)
-
-	return found
-end
-
-local function updateGUIStatus()
-	if #validModels == 0 then
-		StatusLabel.Text = "Nenhum cavalo encontrado com nome entre { }"
-	else
-		local modelInfo = validModels[currentModelIndex]
-		local pos = modelInfo.RootPart.Position
-		StatusLabel.Text = string.format("Cavalo %d de %d:\n%s\nPosição: %.1f, %.1f, %.1f",
-			currentModelIndex,
-			#validModels,
-			modelInfo.Model.Name,
-			pos.X, pos.Y, pos.Z)
-	end
-end
-
-local function teleportToNextModel()
-	if #validModels == 0 then
-		StatusLabel.Text = "Nenhum cavalo encontrado com nome entre { }"
-		return
-	end
-
-	currentModelIndex += 1
-	if currentModelIndex > #validModels then
-		currentModelIndex = 1
-	end
-
-	local target = validModels[currentModelIndex]
-	if target and target.Model and target.RootPart then
-		Character:PivotTo(CFrame.new(target.RootPart.Position + Vector3.new(0, 3, 0)))
-		updateGUIStatus()
-	end
-end
-
-local function refreshHorseList()
-	validModels = findValidModels()
-	currentModelIndex = 1
-	updateGUIStatus()
-end
-
--- Conectando botões
-TeleportButton.MouseButton1Click:Connect(teleportToNextModel)
-RefreshButton.MouseButton1Click:Connect(refreshHorseList)
-CloseButton.MouseButton1Click:Connect(function()
-	GUI.Enabled = false
-end)
-
--- Teclas do teclado
-UIS.InputBegan:Connect(function(input, gameProcessed)
+-- Teclado
+safeConnect(UIS.InputBegan, function(input, gameProcessed)
 	if gameProcessed then return end
 
 	if input.KeyCode == Enum.KeyCode.Z then
 		teleportToNextModel()
-	elseif input.KeyCode == Enum.KeyCode.BackSlash then
-		GUI.Enabled = not GUI.Enabled
-		if GUI.Enabled then
-			refreshHorseList()
-		end
+	elseif input.KeyCode == Enum.KeyCode.X then
+		refreshHorseList()
 	end
 end)
 
--- Arrastar a interface
-local dragInput, mousePos, framePos
+-- Botões
+safeConnect(TeleportButton.MouseButton1Click, teleportToNextModel)
+safeConnect(RefreshButton.MouseButton1Click, refreshHorseList)
+safeConnect(CloseButton.MouseButton1Click, function()
+	cleanup()
+end)
 
+-- Arrastar
 Frame.InputBegan:Connect(function(input)
 	if input.UserInputType == Enum.UserInputType.MouseButton1 then
 		dragInput = input
@@ -207,14 +31,9 @@ Frame.InputBegan:Connect(function(input)
 	end
 end)
 
-RunService.Heartbeat:Connect(function()
+safeConnect(RunService.Heartbeat, function()
 	if dragInput then
 		local delta = UIS:GetMouseLocation() - mousePos
 		Frame.Position = UDim2.new(framePos.X.Scale, framePos.X.Offset + delta.X, framePos.Y.Scale, framePos.Y.Offset + delta.Y)
 	end
 end)
-
--- Inicializa
-task.wait(1)
-refreshHorseList()
-GUI.Enabled = true
